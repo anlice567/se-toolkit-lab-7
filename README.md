@@ -95,3 +95,110 @@ By the end of this lab, you should be able to say:
 ### Optional
 
 1. [Flutter Web Chatbot](./lab/tasks/optional/task-1.md)
+
+## Deploy
+
+This section explains how to deploy the bot alongside the backend on your VM.
+
+### Prerequisites
+
+1. **VM is running** with Docker and Docker Compose installed
+2. **`.env.docker.secret`** is configured with all required values:
+
+   ```bash
+   # On VM
+   cd ~/se-toolkit-lab-7
+   cat .env.docker.secret | grep -E "BOT_TOKEN|LMS_API|LLM_API"
+   ```
+
+3. **Bot token** from @BotFather is set in `BOT_TOKEN`
+
+### Environment variables
+
+The bot requires these variables in `.env.docker.secret`:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `BOT_TOKEN` | Telegram bot token from @BotFather | `123456:ABC-DEF1234...` |
+| `LMS_API_KEY` | Backend API key | `12345` |
+| `LLM_API_KEY` | Qwen Code API key | `lLxruo0YrQkhkK13...` |
+| `LLM_API_BASE_URL` | LLM API endpoint | `http://localhost:42005/v1` |
+| `LLM_API_MODEL` | LLM model name | `coder-model` |
+
+**Important:** Inside Docker, the bot uses `http://backend:8000` to reach the backend (not `localhost:42002`).
+
+### Deploy commands
+
+**On your VM:**
+
+```bash
+cd ~/se-toolkit-lab-7
+
+# Stop the background bot process (if running)
+pkill -f "bot.py" 2>/dev/null || true
+
+# Build and start all services
+docker compose --env-file .env.docker.secret up --build -d
+
+# Check status
+docker compose --env-file .env.docker.secret ps
+```
+
+You should see:
+
+```
+NAME                      STATUS
+se-toolkit-lab-7-backend    Up
+se-toolkit-lab-7-bot        Up
+se-toolkit-lab-7-postgres   Up (healthy)
+se-toolkit-lab-7-pgadmin    Up
+se-toolkit-lab-7-caddy      Up
+```
+
+### Verify deployment
+
+**Check bot container is healthy:**
+
+```bash
+# Is it running?
+docker compose --env-file .env.docker.secret ps bot
+
+# Check logs for startup errors
+docker compose --env-file .env.docker.secret logs bot --tail 20
+```
+
+**Look for in logs:**
+
+- `"Application started"` — bot connected to Telegram
+- `"HTTP Request: POST .../getUpdates"` — bot is polling
+- No Python tracebacks
+
+**Test in Telegram:**
+
+1. Open your bot in Telegram
+2. Send `/start` — should get welcome message
+3. Send `/health` — should show backend status
+4. Send `"what labs are available?"` — should list labs
+
+### Troubleshooting
+
+| Symptom | Likely cause |
+|---------|--------------|
+| Bot container keeps restarting | Check logs: `docker compose logs bot`. Usually missing env var or import error. |
+| `/health` fails but worked before | `LMS_API_BASE_URL` must be `http://backend:8000` (not `localhost:42002`). |
+| LLM queries fail but worked before | `LLM_API_BASE_URL` must use `host.docker.internal` (not `localhost`). |
+| `BOT_TOKEN is required` error | Bot env vars need to be in `.env.docker.secret`. |
+| Build fails at `uv sync --frozen` | `uv.lock` must be copied in Dockerfile. Check `COPY` commands. |
+
+### Stop and restart
+
+```bash
+# Stop all services
+docker compose --env-file .env.docker.secret down
+
+# Restart bot only
+docker compose --env-file .env.docker.secret restart bot
+
+# View bot logs
+docker compose --env-file .env.docker.secret logs -f bot
+```
